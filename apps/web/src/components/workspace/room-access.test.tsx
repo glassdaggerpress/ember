@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sheet } from "@/components/ui/sheet";
 import { RoomAccessDenied, RoomInviteAcceptance } from "./room-access";
 import { RoomInvitations } from "./room-invitations";
+import { openRoomSocketAhead } from "@/hooks/use-room";
+
+vi.mock("@/hooks/use-room", () => ({ openRoomSocketAhead: vi.fn(() => () => {}) }));
 
 afterEach(() => vi.restoreAllMocks());
 const token = "a".repeat(43);
@@ -25,10 +28,12 @@ describe("Private room access", () => {
     const onAccepted = vi.fn();
     show(<RoomInviteAcceptance roomId="secret" token={token} onAccepted={onAccepted} onFailed={vi.fn()} />);
     expect(request).not.toHaveBeenCalled();
+    expect(openRoomSocketAhead).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Join private room" }));
     expect(request).toHaveBeenCalledWith("/api/rooms/secret/invitations/accept", expect.objectContaining({ method: "POST", body: JSON.stringify({ token }) }));
     await waitFor(() => expect(onAccepted).toHaveBeenCalledWith(room));
     expect(location.hash).toBe("");
+    expect(openRoomSocketAhead).toHaveBeenCalledWith("/rooms/secret");
   });
 
   it("shows the same blank denied screen for a revoked invite", async () => {

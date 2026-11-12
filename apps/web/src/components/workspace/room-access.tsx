@@ -4,6 +4,7 @@ import { MainContent } from "@/components/main-content";
 import { Button } from "@/components/ui/button";
 import { navigate, roomPath } from "@/hooks/use-route";
 import { useTitle } from "@/hooks/use-title";
+import { openRoomSocketAhead } from "@/hooks/use-room";
 import { acceptRoomInvitation, ApiError } from "@/lib/api";
 import { PageHeader } from "./page-header";
 
@@ -29,6 +30,9 @@ export function RoomInviteAcceptance({ roomId, token, onAccepted, onFailed }: {
     setBusy(true);
     try {
       const room = await acceptRoomInvitation(roomId, token);
+      // A speculative connection made before joining may have been refused. Replace it now that
+      // membership is granted, even when the workspace socket missed the room.saved event.
+      openRoomSocketAhead(roomPath(roomId));
       onAccepted(room);
       navigate(roomPath(roomId), { replace: true });
     } catch (error) {
