@@ -3823,6 +3823,38 @@ export class WorkspaceStore {
     return row ? roomToChange(row) : null;
   }
 
+  /** A private room's metadata, only used after checking an administrator or its invite. */
+  async privateRoom(roomId: RoomId): Promise<SharedRoom | null> {
+    const [room] = await this.db.all<SharedRoom>(`SELECT id, kind, name, icon FROM rooms WHERE id = ? AND kind = 'closed'`, roomId);
+    return room ?? null;
+  }
+
+  /** Whether the invite is current and its issuer is still an active administrator. */
+  async roomInvitationActive(roomId: RoomId, digest?: string): Promise<boolean> {
+    const query = `SELECT room_invitations.room_id FROM room_invitations
+      JOIN rooms ON rooms.id = room_invitations.room_id AND rooms.kind = 'closed'
+      JOIN users ON users.id = room_invitations.created_by AND users.role = ${ADMINISTRATOR} AND users.status = ${ACTIVE}
+      WHERE room_invitations.room_id = ?`;
+    const rows = digest === undefined
+      ? await this.db.all(query, roomId)
+      : await this.db.all(query + ` AND room_invitations.token_digest = ?`, roomId, digest);
+    return rows.length > 0;
+  }
+
+  async saveRoomInvitation(roomId: RoomId, digest: string, userId: UserId, now: string): Promise<void> {
+    await this.db.run(`INSERT INTO room_invitations (room_id, token_digest, created_by, created_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(room_id) DO UPDATE SET token_digest = excluded.token_digest, created_by = excluded.created_by, created_at = excluded.created_at`, roomId, digest, userId, now);
+  }
+
+  async revokeRoomInvitation(roomId: RoomId): Promise<void> {
+    await this.db.run(`DELETE FROM room_invitations WHERE room_id = ?`, roomId);
+  }
+
+  /** Adds one signed-in person without changing an existing membership's notification preference. */
+  async acceptRoomInvitation(roomId: RoomId, userId: UserId, now: string): Promise<void> {
+    await this.db.run(`INSERT OR IGNORE INTO memberships (room_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)`, roomId, userId, now, now);
+  }
+
   /** The same, with everyone active and whether they're in the room, read together. */
   async roomSettings(roomId: RoomId, userId: UserId): Promise<RoomSettings | null> {
     const [[row], people] = (await this.db.batch([statement(ROOM_TO_CHANGE, roomId, userId), statement(ACTIVE_PEOPLE_IN_ROOM, roomId)])) as [

@@ -2518,6 +2518,7 @@ export class Workspace extends DurableObject<Env> {
     const user = await this.authenticate(credentials);
     if (!user) return null;
     if (!(await this.mayCreateRoomsAs(user.id))) return "forbidden";
+    if (room.kind === "closed" && !(await this.store.isAdministrator(user.id))) return "forbidden";
     const created: SharedRoom = { id: sortableId(), kind: room.kind, name: room.name, icon: room.icon || null };
     const memberIds = await this.store.createRoom(created, user.id, room.kind === "closed" ? room.memberIds : null, new Date().toISOString());
     this.tell(memberIds, { type: "room.saved", room: created });
@@ -3279,6 +3280,36 @@ export class Workspace extends DurableObject<Env> {
     return (await this.store.roomSettings(roomId, user.id)) ?? "not found";
   }
 
+  /** Only workspace administrators may issue, inspect or revoke private-room invitations. */
+  async roomInvitation(credentials: Credentials, roomId: RoomId, change?: { digest: string } | "revoke"): Promise<{ active: boolean } | "not found" | "forbidden" | null> {
+    return this.oneAtATime(async () => {
+      const user = await this.authenticate(credentials);
+      if (!user) return null;
+      if (!(await this.store.isAdministrator(user.id))) return "forbidden";
+      if (!(await this.store.privateRoom(roomId))) return "not found";
+      if (change === "revoke") await this.store.revokeRoomInvitation(roomId);
+      else if (change) await this.store.saveRoomInvitation(roomId, change.digest, user.id, new Date().toISOString());
+      return { active: await this.store.roomInvitationActive(roomId) };
+    });
+  }
+
+  /** Serializes accepting with replacing/revoking invites and changing room access. */
+  async acceptRoomInvitation(credentials: Credentials, roomId: RoomId, digest: string): Promise<SharedRoom | "not found" | null> {
+    return this.oneAtATime(async () => {
+      const user = await this.authenticate(credentials);
+      if (!user) return null;
+      if (!(await this.store.roomInvitationActive(roomId, digest))) return "not found";
+      const room = await this.store.privateRoom(roomId);
+      if (!room) return "not found";
+      await this.store.acceptRoomInvitation(roomId, user.id, new Date().toISOString());
+      this.tell([user.id], { type: "room.saved", room });
+      this.tell([user.id], { type: "rooms.reordered" });
+      const huddle = await this.store.liveHuddle(roomId);
+      if (huddle) this.tell([user.id], { type: "room.huddle", roomId, huddle });
+      return room;
+    });
+  }
+
   /**
    * Makes `changes` to room `roomId` as the person `credentials` signs in, answering the room as it
    * is then: "not found" as for its settings, "forbidden" unless they can change it, or null without
@@ -3293,6 +3324,7 @@ export class Workspace extends DurableObject<Env> {
       const found = await this.store.roomToChange(roomId, user.id);
       if (!found) return "not found";
       if (!found.canAdminister) return "forbidden";
+      if (changes.kind && (changes.kind === "closed" || changes.kind !== found.room.kind) && !(await this.store.isAdministrator(user.id))) return "forbidden";
       const changed: SharedRoom = {
         ...found.room,
         ...(changes.name && { name: changes.name }),
