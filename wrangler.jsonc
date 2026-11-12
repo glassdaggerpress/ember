@@ -9,8 +9,14 @@
   // when they name a host in this Worker's own zone, rather than straight to its origin. nodejs_compat
   // is for node:crypto's scrypt, which hashes passwords natively (apps/worker/src/passwords.ts).
   "compatibility_flags": ["global_fetch_strictly_public", "nodejs_compat"],
-  // `enabled` alone turns on logs; traces time each fetch, RPC and Durable Object SQL statement.
-  "observability": { "enabled": true, "traces": { "enabled": true } },
+  // Keep a sample of production diagnostics rather than tracing every idle poll and SQL statement.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "head_sampling_rate": 0.1, "invocation_logs": true },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  },
   // Lets production CPU and heap profiles and exception stacks name our source files.
   "upload_source_maps": true,
   // Ember answers at its workers.dev address until an administrator gives it a domain of its own, and goes
