@@ -354,6 +354,22 @@ export interface RoomSettings {
   people: RoomPerson[];
 }
 
+/** An admin-issued room link, returned once; only its digest is stored. */
+export interface RoomInvitation {
+  url: string;
+}
+
+/** Whether a private room has a working invitation, without disclosing its secret. */
+export interface RoomInvitationStatus {
+  active: boolean;
+}
+
+/** The secret from a room invite's fragment, sent only in a same-origin POST. */
+export function parseRoomInvitation(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || !("token" in value)) return null;
+  return typeof value.token === "string" && /^[\w-]{43}$/.test(value.token) ? value.token : null;
+}
+
 /**
  * What `PATCH /api/rooms/<id>` changes in a room, as its settings save it: its name, its icon, and who
  * it's for, everyone or just the people `memberIds` names, which takes anyone else out of it.
