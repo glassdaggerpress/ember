@@ -77,7 +77,7 @@ describe("Create an open room", () => {
     serve();
     showPage();
     await roomName();
-    expect(screen.getByRole("switch", { name: "Give only some access to this room" })).toBeChecked();
+    expect(screen.getByRole("combobox", { name: "Room privacy" })).toHaveValue("open");
     expect(names()).toEqual(["Everyone", "Ada Lovelace", "Grace Hopper", "Linus Torvalds"]);
     for (const person of [ada, grace, linus]) {
       expect(hasCheckMark(person.name)).toBe(true);
@@ -214,11 +214,11 @@ describe("Create a private room", () => {
     await user.clear(await roomName());
     await user.type(await roomName(), "Leads");
     const length = history.length;
-    await user.click(screen.getByRole("switch", { name: "Give only some access to this room" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Room privacy" }), "closed");
     expect(location.pathname).toBe("/rooms/closeds/new");
     expect(history.length).toBe(length);
     expect(await roomName()).toHaveValue("Leads");
-    expect(screen.getByRole("switch", { name: "Give everyone access to this room" })).not.toBeChecked();
+    expect(screen.getByRole("combobox", { name: "Room privacy" })).toHaveValue("closed");
   });
 
   it("lists you with a check mark and everyone else with a switch, off", async () => {
@@ -248,9 +248,9 @@ describe("Create a private room", () => {
     serve();
     const { user } = showPage("/rooms/closeds/new");
     await user.click(await screen.findByRole("switch", { name: `Give ${grace.name} access to this room` }));
-    await user.click(screen.getByRole("switch", { name: "Give everyone access to this room" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Room privacy" }), "open");
     expect(location.pathname).toBe("/rooms/opens/new");
-    await user.click(screen.getByRole("switch", { name: "Give only some access to this room" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Room privacy" }), "closed");
     expect(screen.getByRole("switch", { name: `Give ${grace.name} access to this room` })).toBeChecked();
   });
 });
@@ -279,13 +279,13 @@ describe("Unsaved changes guard", () => {
   it("counts the private form and the people chosen, but asks nothing of the Everyone switch", async () => {
     serve();
     const { user } = showPage();
-    await user.click(await screen.findByRole("switch", { name: "Give only some access to this room" }));
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Room privacy" }), "closed");
     expect(location.pathname).toBe("/rooms/closeds/new");
     expect(asking()).not.toBeInTheDocument();
     act(() => navigate("/account/edit"));
     await user.click(await screen.findByRole("button", { name: "Keep editing" }));
 
-    await user.click(screen.getByRole("switch", { name: "Give everyone access to this room" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Room privacy" }), "open");
     act(() => navigate("/account/edit"));
     expect(location.pathname).toBe("/account/edit");
     expect(asking()).not.toBeInTheDocument();

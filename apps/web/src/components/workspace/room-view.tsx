@@ -16,6 +16,7 @@ import { Composer, RoomDeleted, type ComposerHandle } from "./composer";
 import { MessageList } from "./message-list";
 import { RoomHeader } from "./room-header";
 import { RoomNotice } from "./room-notice";
+import { RoomAccessDenied } from "./room-access";
 import { ThreadPanel } from "./thread-panel";
 
 /** Where a thread covers its room, rather than showing beside it: below 1180px wide. */
@@ -104,6 +105,8 @@ export function RoomView({ room, messageId, threadId, replyId, invitation, onDis
     const newest = state.messages.findLast((message) => message.creator.id === me.id);
     if (newest && !isPending(newest)) editors.open(newest.id);
   };
+
+  if (deleted) return <RoomAccessDenied />;
 
   return (
     <>

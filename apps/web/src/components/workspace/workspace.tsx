@@ -22,7 +22,7 @@ import { loadPage } from "@/lib/page";
 import { updateOf } from "@/lib/release-check";
 import { markedUnread } from "@/lib/room-list";
 import { cn } from "@/lib/utils";
-import { afterNavigating, messagePath, navigate, pageMark, roomPath, routeOf, useHash, useRoute, type Route } from "@/hooks/use-route";
+import { afterNavigating, messagePath, navigate, pageMark, roomPath, routeOf, useHash, useRoute, useVisit, type Route } from "@/hooks/use-route";
 import { HuddlesContext, NO_HUDDLES, type Huddles } from "./huddle-button";
 import { MovedNotice } from "./moved-notice";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
@@ -30,6 +30,7 @@ import { NewDirectDialog } from "./new-direct-dialog";
 import { DrawerOpen, PageHeader } from "./page-header";
 import { Rail, type RailPage } from "./rail";
 import { RoomView, type RoomViewHandle } from "./room-view";
+import { RoomAccessDenied, RoomInviteAcceptance } from "./room-access";
 import { OpenSearchContext, SearchBox, type SearchBoxOptions } from "./search-box";
 import { SettingsLayout, settingsSectionOf, type SettingsPlace } from "./settings-navigation";
 import { Sidebar } from "./sidebar";
@@ -204,10 +205,10 @@ function redirectOf(route: Route, rooms: SidebarRoom[]): Redirect | null {
       // A direct message's goes on without looking, and the room's own address checks it.
       if (route.kind === "direct") return { path: roomPath(route.roomId) };
       const room = rooms.find((r) => r.id === route.roomId);
-      return room && room.kind !== "direct" ? { path: roomPath(room.id) } : ROOM_NOT_FOUND;
+      return { path: roomPath(route.roomId) };
     }
     case "room":
-      return rooms.some((r) => r.id === route.roomId) ? null : ROOM_NOT_FOUND;
+      return null;
     case "message":
       // Without looking, as the permalink checks the room.
       return { path: route.messageId ? messagePath(route.roomId, route.messageId) : roomPath(route.roomId) };
@@ -278,6 +279,7 @@ export function Workspace({ me, workspaceName, onAccountChanged, onSignOut, onSe
   const roomView = useRef<RoomViewHandle>(null);
   const route = useRoute();
   const hash = useHash();
+  const visit = useVisit();
   // On a page of community settings, the links to their sections take the conversations' place.
   const section = settingsSectionOf(route, hash);
   const administrator = me.administrator;
@@ -438,18 +440,18 @@ export function Workspace({ me, workspaceName, onAccountChanged, onSignOut, onSe
   // than last, as a room just made goes. The sidebar has one list on its way at a time, so an older one
   // can't take the place of a newer one, which has changes made here since, and this waits for one asked
   // for after the address was visited.
-  const [askedAgain, setAskedAgain] = useState<{ route: Route; answered: boolean } | null>(null);
+  const [askedAgain, setAskedAgain] = useState<{ route: Route; visit: number; answered: boolean } | null>(null);
   // A room's address the list couldn't be asked for again for, which stays rather than going home as if
   // the room weren't theirs, and says why in the page, until it's left or Try again asks again.
   const [unanswered, setUnanswered] = useState<{ route: Route; reason: string } | null>(null);
   const namedId = namedRoomId(route);
   const unlisted = rooms !== null && !goneRoom && namedId !== null && !rooms.some((r) => r.id === namedId);
-  const askAgain = unlisted && askedAgain?.route !== route;
+  const askAgain = unlisted && (askedAgain?.route !== route || askedAgain?.visit !== visit);
   const askingAgain = askAgain || (askedAgain?.route === route && !askedAgain.answered);
   useEffect(() => {
     if (!askAgain) return;
-    setAskedAgain({ route, answered: false });
-    const answered = () => setAskedAgain((asked) => (asked?.route === route ? { route, answered: true } : asked));
+    setAskedAgain({ route, visit, answered: false });
+    const answered = () => setAskedAgain((asked) => (asked?.route === route && asked.visit === visit ? { route, visit, answered: true } : asked));
     refresh().then(answered, (error) => {
       // As with `failed`, a session already replaced hears nothing.
       if (!mounted.current) return;
@@ -458,7 +460,7 @@ export function Workspace({ me, workspaceName, onAccountChanged, onSignOut, onSe
       // A room's settings ask the server about the room themselves.
       if (route.page !== "room-settings") setUnanswered({ route, reason: reasonFor(error) });
     });
-  }, [askAgain, route, refresh, onSessionChanged, mounted]);
+  }, [askAgain, route, visit, refresh, onSessionChanged, mounted]);
   const tryAgain = () => {
     setUnanswered(null);
     setAskedAgain(null);
@@ -709,6 +711,8 @@ export function Workspace({ me, workspaceName, onAccountChanged, onSignOut, onSe
           />
         ));
       default:
+        if (route.page === "room" && hash.startsWith("#invite="))
+          return <RoomInviteAcceptance key={`${route.roomId}/${hash}`} roomId={route.roomId} token={hash.slice(8)} onAccepted={listRoom} onFailed={failed} />;
         if (direct)
           return rarePage(({ DirectSettingsPage }) => (
             <DirectSettingsPage key={direct.id} room={direct} me={me} back={back} askForRoom={askForRoom} onMissing={missing} onFailed={failed} />
@@ -757,6 +761,7 @@ export function Workspace({ me, workspaceName, onAccountChanged, onSignOut, onSe
               </MainContent>
             </>
           );
+        if (route.page === "room" && rooms && !askingAgain && !goingOn) return <RoomAccessDenied />;
         // While the rooms load, or before the page goes on to another, which it does before this paints.
         return LOADING;
     }

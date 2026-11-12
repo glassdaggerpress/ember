@@ -59,9 +59,9 @@ describe("Create an open room", () => {
     const onFlip = vi.fn();
     const { user } = renderForm({ everyone: { on: true, onFlip } });
     expect(names()[0]).toBe("Everyone");
-    const everyone = screen.getByRole("switch", { name: "Give only some access to this room" });
-    expect(everyone).toBeChecked();
-    await user.click(everyone);
+    const everyone = screen.getByRole("combobox", { name: "Room privacy" });
+    expect(everyone).toHaveValue("open");
+    await user.selectOptions(everyone, "closed");
     expect(onFlip).toHaveBeenCalledOnce();
   });
 
@@ -74,7 +74,7 @@ describe("Create an open room", () => {
   it("disables Save and every switch while saving", () => {
     renderForm({ saving: true, everyone: { on: false, onFlip: vi.fn() }, mark: (person) => <AccessSwitch person={person} checked onCheckedChange={vi.fn()} /> });
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getAllByRole("switch")).toHaveLength(4);
+    expect(screen.getAllByRole("switch")).toHaveLength(3);
     for (const toggle of screen.getAllByRole("switch")) expect(toggle).toBeDisabled();
   });
 });
@@ -82,7 +82,7 @@ describe("Create an open room", () => {
 describe("Create a private room", () => {
   it("names the Everyone switch for opening the room when it's off", () => {
     renderForm({ everyone: { on: false, onFlip: vi.fn() } });
-    expect(screen.getByRole("switch", { name: "Give everyone access to this room" })).not.toBeChecked();
+    expect(screen.getByRole("combobox", { name: "Room privacy" })).toHaveValue("closed");
   });
 
   it("lists each group by itself, with a line between", () => {

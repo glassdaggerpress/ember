@@ -11,6 +11,7 @@ import { AccessSwitch, CheckMark, RoomForm, withChoice } from "./room-form";
 import { workspaceSectionPath } from "./settings-navigation";
 import { PageHeading, Panel, SettingsPage } from "./settings-page";
 import { UnsavedChanges } from "./unsaved-changes";
+import { RoomInvitations } from "./room-invitations";
 
 /** Whether `error` says the room isn't there for this person. */
 export const isMissing = (error: unknown) => error instanceof ApiError && error.status === 404;
@@ -29,7 +30,7 @@ interface Props {
   roomId: RoomId;
   /** Which of the two forms the address names. */
   access: Access;
-  me: User;
+  me: User & { administrator?: boolean };
   /**
    * Called as the room is saved or deleted, with what lists it, for the sidebar, as the server answers:
    * as saved, or gone once it's saved without this person, or deleted. The page then shows the room, or
@@ -63,6 +64,7 @@ export function RoomSettingsPage({ roomId, access, me, askForRoom, onMissing, on
   const [opened, setOpened] = useState(access);
   const roomForm = useRef<HTMLFormElement>(null);
   const mounted = useMounted();
+  const canManageAccess = !!settings?.canAdminister && me.administrator !== false;
   useTitle(settings && `Edit settings for ${settings.room.name}`);
 
   useEffect(() => {
@@ -87,7 +89,7 @@ export function RoomSettingsPage({ roomId, access, me, askForRoom, onMissing, on
 
   // Whoever can change the room picks the form; anyone else sees the one for its kind, as the other
   // would describe the room wrongly.
-  const kind = settings && !settings.canAdminister ? settings.room.kind : null;
+  const kind = settings && !canManageAccess ? settings.room.kind : null;
   useEffect(() => {
     if (kind && kind !== access) navigate(roomSettingsPath(kind, roomId), { replace: true });
   }, [kind, access, roomId]);
@@ -106,8 +108,8 @@ export function RoomSettingsPage({ roomId, access, me, askForRoom, onMissing, on
    * this person, settling with whether it was. The form is then compared with what's saved.
    */
   const send = () => {
-    const changes: RoomChanges = access === "open" ? { name, icon: icon ?? "", kind: access } : { name, icon: icon ?? "", kind: access, memberIds: [...chosen] };
-    const leaving = access === "closed" && !chosen.has(me.id);
+    const changes: RoomChanges = !canManageAccess ? { name, icon: icon ?? "" } : access === "open" ? { name, icon: icon ?? "", kind: access } : { name, icon: icon ?? "", kind: access, memberIds: [...chosen] };
+    const leaving = canManageAccess && access === "closed" && !chosen.has(me.id);
     const answered = askForRoom();
     return changeRoom(roomId, changes).then((room) => {
       answered(leaving ? { type: "gone", roomId: room.id } : { type: "saved", room });
@@ -163,11 +165,11 @@ export function RoomSettingsPage({ roomId, access, me, askForRoom, onMissing, on
             icon={icon}
             onIconChange={setIcon}
             // The private form has the Everyone row only for whoever can change the room.
-            everyone={settings.canAdminister ? { on: open, onFlip: flip } : open ? { on: true } : null}
+            everyone={canManageAccess ? { on: open, onFlip: flip } : open ? { on: true } : null}
             // A private room lists its members first.
             groups={open ? [settings.people] : [settings.people.filter((p) => p.member), settings.people.filter((p) => !p.member)]}
             mark={(person) =>
-              settings.canAdminister &&
+              canManageAccess &&
               (open ? (
                 <CheckMark />
               ) : (
@@ -187,6 +189,9 @@ export function RoomSettingsPage({ roomId, access, me, askForRoom, onMissing, on
             <span className="truncate">Leave {settings.room.name}</span>
           </Button>
         </Panel>
+      )}
+      {settings?.room.kind === "closed" && access === "closed" && "administrator" in me && me.administrator === true && (
+        <RoomInvitations key={roomId} roomId={roomId} onFailed={onFailed} />
       )}
       {settings?.canAdminister && (
         <Panel>
