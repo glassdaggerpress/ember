@@ -436,7 +436,7 @@ describe("Where messages live", () => {
     const { status } = deploy(EVERY_SECRET);
     expect(status).toBe(0);
     const { d1_databases, ...rest } = dataOf(readFileSync(path.join(ROOT, "wrangler.jsonc"), "utf8")) as Record<string, unknown>;
-    expect(d1_databases).toEqual([DATABASE]);
+    expect(d1_databases).toEqual([expect.objectContaining({ binding: "DB", migrations_dir: "apps/worker/migrations" })]);
     // Named for this deploy alone, so a deploy run beside it from the same checkout keeps its own.
     expect(output("deploy-args")).toMatch(/^--config wrangler\.\d+\.deploy\.json$/);
     expect(JSON.parse(output("deploy-config.json")!)).toEqual(rest);
