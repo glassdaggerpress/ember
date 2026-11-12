@@ -122,6 +122,7 @@ describe("Star rooms", () => {
   it("leaves out stars on rooms you've since left or hidden, or that were deleted, and drops them at your next star", async () => {
     const ada = await signIn("Ada");
     const grace = await signIn("Grace");
+    await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", grace.user.id);
     const design = await createRoom("Design");
     const secret = await createRoom("Secret", { closedTo: [ada.user.id, grace.user.id], as: grace });
     const hidden = await createRoom("Hidden");

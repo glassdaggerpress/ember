@@ -19,7 +19,7 @@ const isNewRoomPath = (path: string) => path === newRoomPath("open") || path ===
 interface Props {
   /** Which of the two forms the address shows: a room for everyone, or a private one. */
   access: Access;
-  me: User;
+  me: User & { administrator?: boolean };
   /** Lists the room made, for the sidebar. The page then shows it, unless it was left first. */
   onCreated: (room: Room) => void;
   /** Says why something failed, as the workspace's alerts do. */
@@ -45,6 +45,9 @@ export function NewRoomPage({ access, me, onCreated, onFailed }: Props) {
   const roomForm = useRef<HTMLFormElement>(null);
   const flash = useFlash();
   const mounted = useMounted();
+  useEffect(() => {
+    if (me.administrator === false && access === "closed") navigate(newRoomPath("open"), { replace: true });
+  }, [access, me.administrator]);
 
   useEffect(() => {
     let stopped = false;
@@ -106,7 +109,7 @@ export function NewRoomPage({ access, me, onCreated, onFailed }: Props) {
             onNameChange={setName}
             icon={icon}
             onIconChange={setIcon}
-            everyone={{ on: access === "open", onFlip: () => navigate(newRoomPath(access === "open" ? "closed" : "open"), { replace: true }) }}
+            everyone={{ on: access === "open", ...(me.administrator !== false && { onFlip: () => navigate(newRoomPath(access === "open" ? "closed" : "open"), { replace: true }) }) }}
             groups={[people]}
             mark={(person) =>
               access === "open" || person.id === me.id ? (

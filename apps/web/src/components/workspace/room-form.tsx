@@ -64,6 +64,20 @@ export function RoomForm<Person extends User>({ canAdminister, name, onNameChang
 
       {canAdminister && <IconPicker icon={icon} onChange={onIconChange} disabled={saving} />}
 
+      {canAdminister && everyone?.onFlip && (
+        <div className="my-4 space-y-2">
+          <Field id="room_privacy" label="Room privacy">
+            <select id="room_privacy" value={everyone.on ? "open" : "closed"} onChange={everyone.onFlip} disabled={saving} className={FIELD_INPUT}>
+              <option value="open">Public</option>
+              <option value="closed">Private</option>
+            </select>
+          </Field>
+          <p className="text-sm text-muted-foreground">
+            {everyone.on ? "Public rooms are open to everyone in this workspace." : "Private rooms are for their current members. New members need a room invite from an admin."}
+          </p>
+        </div>
+      )}
+
       {/* Saving sends who the switches showed when Save was pressed, so they wait until it's done. */}
       <fieldset disabled={saving} className="my-4 min-w-0 rounded-[10px] border bg-surface px-[1ch]">
         <People everyone={everyone} groups={groups} mark={mark} />
@@ -85,14 +99,8 @@ function People<Person extends User>({ everyone, groups, mark }: Pick<Props<Pers
     <menu className="m-0 flex max-h-[50vh] flex-col gap-x-[1ch] gap-y-4 overflow-y-auto px-[1ch] py-4">
       {everyone && (
         <>
-          <ListRow figure={<Community className="size-[4ch] shrink-0" />} name="Everyone">
-            {everyone.onFlip && (
-              <Switch
-                checked={everyone.on}
-                onCheckedChange={everyone.onFlip}
-                aria-label={everyone.on ? "Give only some access to this room" : "Give everyone access to this room"}
-              />
-            )}
+          <ListRow figure={<Community className="size-[4ch] shrink-0" />} name={everyone.on ? "Everyone" : "Private room members"}>
+            {everyone.on && <CheckMark />}
           </ListRow>
           <ListSeparator />
         </>

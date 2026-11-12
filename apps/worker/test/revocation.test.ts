@@ -46,6 +46,13 @@ const takeOut = (roomId: RoomId, ada: { cookie: string; user: { id: string } }) 
   api(`/api/rooms/${roomId}`, { method: "PATCH", headers: { Cookie: ada.cookie }, body: JSON.stringify({ kind: "closed", memberIds: [ada.user.id] }) });
 
 beforeEach(freshDeploy);
+
+const administratorAda = async () => {
+  const session = await signIn("Ada");
+  await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", session.user.id);
+  return session;
+};
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -54,7 +61,7 @@ afterEach(() => {
 describe("Connection sign-in and revocation", () => {
   it("turns away a socket let through at or before a revocation of its session or person, telling it to reconnect", async () => {
     const room = await freshRoom("lobby");
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const revokedAt = Date.now();
     await roomStub(room).revoke(room, [{ tag: sessionTag("laptop"), code: CloseCode.Reconnect }], revokedAt);
 
@@ -74,7 +81,7 @@ describe("Connection sign-in and revocation", () => {
     const now = Date.now();
     vi.useFakeTimers({ toFake: ["Date"], now });
     const room = await freshRoom("lobby");
-    const { user } = await signIn("Ada");
+    const { user } = await administratorAda();
     expect(await outcome(room, { user, sessionId: "laptop", authorizedAt: now - AUTHORIZATION_TTL_MS - 1 })).toEqual(reconnect);
     expect(await outcome(room, { user, sessionId: "laptop", authorizedAt: now - AUTHORIZATION_TTL_MS })).toBe("welcome");
   });
@@ -83,7 +90,7 @@ describe("Connection sign-in and revocation", () => {
     const start = Date.now();
     vi.useFakeTimers({ toFake: ["Date"], now: start });
     const room = await freshRoom("lobby");
-    const { user } = await signIn("Ada");
+    const { user } = await administratorAda();
     await roomStub(room).revoke(room, [{ tag: user.id, code: CloseCode.Revoked }], start);
 
     await evictDurableObject(roomStub(room));
@@ -97,7 +104,7 @@ describe("Connection sign-in and revocation", () => {
   it("closes every socket a revocation names with its code, and the person leaves at once, just once", async () => {
     const room = await freshRoom("lobby");
     const grace = await connect(room, "Grace");
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const tabs = [await connect(room, ada), await connect(room, ada)];
     const linus = await connect(room, "Linus");
     await settle(grace);
@@ -128,7 +135,7 @@ describe("Connection sign-in and revocation", () => {
   });
 
   it("queues closing a session's sockets in each of its person's rooms, in the change that ends it", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const rooms = [await freshRoom("lobby"), await freshRoom("annex")];
     const [{ id, token_digest }] = (await workspaceSql("SELECT id, token_digest FROM sessions WHERE user_id = ?", ada.user.id)) as [{ id: string; token_digest: string }];
     const endSession = () =>
@@ -212,7 +219,7 @@ describe("Connection sign-in and revocation", () => {
     // The alarm, set as the sockets are queued, would close them a moment later; set for LATER, it never
     // runs, so whatever is closed by the time the change answers, the change closed.
     vi.useFakeTimers({ toFake: ["Date"], now: LATER });
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const closed = closeOf((await connect(room.id, grace)).ws);
 
@@ -224,7 +231,7 @@ describe("Connection sign-in and revocation", () => {
 
   it("closes a session's room sockets before signing out answers", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: LATER });
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const lobby = await freshRoom("lobby");
     const closed = closeOf((await connect(lobby, ada)).ws);
 
@@ -236,7 +243,7 @@ describe("Connection sign-in and revocation", () => {
 
   it("answers a change after waiting two seconds for a room, and leaves that room's sockets to the alarm", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: LATER });
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const closed = closeOf((await connect(room.id, grace)).ws);
     let isClosed = false;
@@ -267,7 +274,7 @@ describe("Connection sign-in and revocation", () => {
 
   it("closes every socket a change ends in a room with one call, however many rows it queued there", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: LATER });
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const closed = closeOf((await connect(room.id, grace)).ws);
     // As many rows in the room as the alarm delivers a run, queued and not yet tried, as a change
@@ -294,7 +301,7 @@ describe("Connection sign-in and revocation", () => {
 
   it("calls the rooms a change queued last first, up to 40 of them, leaving older ones to the alarm", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: LATER });
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const closed = closeOf((await connect(room.id, grace)).ws);
     // A backlog as many rooms long as a run delivers, queued before the change and not yet tried.
@@ -320,7 +327,7 @@ describe("Connection sign-in and revocation", () => {
 
   it("delivers a change's revocations after a delivery under way, never alongside it", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: LATER });
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const closed = closeOf((await connect(room.id, grace)).ws);
     let isClosed = false;
@@ -394,7 +401,7 @@ describe("Connection sign-in and revocation", () => {
   });
 
   it("sets its alarm for the revocations waiting when it starts, in case it stopped before it could", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const lobby = await freshRoom("lobby");
     const closed = closeOf((await connect(lobby, ada)).ws);
     // As a Workspace that stopped between saving a change and setting its alarm leaves it.

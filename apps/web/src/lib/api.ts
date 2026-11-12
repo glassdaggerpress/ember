@@ -6,6 +6,8 @@ import {
   searchQuery,
   WORKSPACE_PRELOADS,
   type Account,
+  type RoomInvitation,
+  type RoomInvitationStatus,
   type AccountChanges,
   type AssistantCatalog,
   type AssistantChanged,
@@ -791,6 +793,12 @@ export async function startDirect(userIds: UserId[]): Promise<DirectRoom> {
 export async function fetchRoomSettings(roomId: RoomId): Promise<RoomSettings> {
   return request<RoomSettings>(`/api/rooms/${encodeURIComponent(roomId)}/settings`);
 }
+
+export const fetchRoomInvitation = (roomId: RoomId) => request<RoomInvitationStatus>(`/api/rooms/${encodeURIComponent(roomId)}/invitations`);
+export const createRoomInvitation = (roomId: RoomId) => request<RoomInvitation>(`/api/rooms/${encodeURIComponent(roomId)}/invitations`, { method: "POST" });
+export const revokeRoomInvitation = (roomId: RoomId) => request<RoomInvitationStatus>(`/api/rooms/${encodeURIComponent(roomId)}/invitations`, { method: "DELETE" });
+export const acceptRoomInvitation = async (roomId: RoomId, token: string): Promise<SharedRoom> =>
+  (await request<{ room: SharedRoom }>(`/api/rooms/${encodeURIComponent(roomId)}/invitations/accept`, { method: "POST", body: JSON.stringify({ token }) })).room;
 
 /** Changes a room, answering it as it is then. */
 export async function changeRoom(roomId: RoomId, changes: RoomChanges): Promise<SharedRoom> {

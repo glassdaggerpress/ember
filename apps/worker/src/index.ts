@@ -41,6 +41,7 @@ import {
   parseRoleChange,
   parseSendingDomainCheck,
   parseRoomChanges,
+  parseRoomInvitation,
   parseTurnstileKeysChange,
   PROFILE_PATH,
   SIGN_IN_LIMITED,
@@ -902,6 +903,31 @@ async function roomSettings(request: Request, env: Env, roomId: RoomId): Promise
   return settings === "not found" ? problem(404, ROOM_NOT_FOUND) : json(settings satisfies RoomSettings);
 }
 
+async function roomInvitation(request: Request, env: Env, roomId: RoomId): Promise<Response> {
+  const credentials = await credentialsOf(request, env);
+  if (!credentials) return problem(401, "Not signed in");
+  const token = request.method === "POST" ? newSessionToken() : null;
+  const change = token ? { digest: await tokenDigest("room-invite:" + token, env.SESSION_SECRET) } : request.method === "DELETE" ? "revoke" as const : undefined;
+  const result = await workspace(env).roomInvitation(credentials, roomId, change);
+  if (!result) return problem(401, "Not signed in");
+  if (result === "forbidden") return problem(403, "Only administrators can manage room invitations");
+  if (result === "not found") return problem(404, ROOM_NOT_FOUND);
+  const headers = { "Cache-Control": "no-store" };
+  if (!token) return json(result, { headers });
+  const origin = originFor(request, (await workspace(env).account())?.customDomain ?? null);
+  return json({ url: `${origin}/rooms/${roomId}#invite=${token}` }, { status: 201, headers });
+}
+
+async function acceptRoomInvitation(request: Request, env: Env, roomId: RoomId): Promise<Response> {
+  const credentials = await credentialsOf(request, env);
+  if (!credentials) return problem(401, "Not signed in");
+  const token = parseRoomInvitation(await jsonBodyOf(request));
+  if (!token) return problem(404, ROOM_NOT_FOUND);
+  const room = await workspace(env).acceptRoomInvitation(credentials, roomId, await tokenDigest("room-invite:" + token, env.SESSION_SECRET));
+  if (!room) return problem(401, "Not signed in");
+  return room === "not found" ? problem(404, ROOM_NOT_FOUND) : json({ room }, { headers: { "Cache-Control": "no-store" } });
+}
+
 /**
  * Changes a room, as its settings page saves it. Someone who can't change it hears so before anything
  * they sent is checked.
@@ -1180,6 +1206,11 @@ function apiAction(request: Request, env: Env, pathname: string): (() => Respons
   if (huddle) return () => (isRoomId(huddle[1]!) ? connectToRoom(request, env, huddle[1]!, true) : problem(404, ROOM_NOT_FOUND));
   const settings = pathname.match(/^\/api\/rooms\/([^/]+)\/settings$/);
   if (settings && request.method === "GET") return () => (isRoomId(settings[1]!) ? roomSettings(request, env, settings[1]!) : problem(404, ROOM_NOT_FOUND));
+  const roomInvite = pathname.match(/^\/api\/rooms\/([^/]+)\/invitations(\/accept)?$/);
+  if (roomInvite && isRoomId(roomInvite[1]!)) {
+    if (roomInvite[2] && request.method === "POST") return () => acceptRoomInvitation(request, env, roomInvite[1]!);
+    if (!roomInvite[2] && ["GET", "POST", "DELETE"].includes(request.method)) return () => roomInvitation(request, env, roomInvite[1]!);
+  }
   const favorite = pathname.match(/^\/api\/rooms\/([^/]+)\/favorite$/);
   if (favorite && request.method === "PUT") return () => setFavorite(request, env, favorite[1]!);
   const involvement = pathname.match(/^\/api\/rooms\/([^/]+)\/involvement$/);

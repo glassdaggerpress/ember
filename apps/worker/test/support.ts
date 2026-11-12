@@ -294,11 +294,19 @@ let host: Promise<Session> | undefined;
  * closed one for just the people `closedTo` names.
  */
 export async function createRoom(name: string, { closedTo, icon, as }: { closedTo?: UserId[]; icon?: RoomIconChoice; as?: Session } = {}): Promise<SharedRoom> {
-  const { cookie } = as ?? (await (host ??= signIn("Host")));
+  const session = as ?? (await (host ??= signIn("Host")));
   const room = closedTo ? { kind: "closed", name, icon, memberIds: closedTo } : { kind: "open", name, icon };
-  const response = await api("/api/rooms", { method: "POST", headers: { Cookie: cookie }, body: JSON.stringify(room) });
-  expect(response.status, await response.clone().text()).toBe(201);
-  return ((await response.json()) as { room: SharedRoom }).room;
+  // Existing suites set up private-room fixtures independently of the creator's role. Exercise the
+  // admin-only creation API, then restore that role before testing what the creator may do.
+  const [person] = await workspaceSql("SELECT role FROM users WHERE id = ?", session.user.id) as Array<{ role: number }>;
+  if (closedTo && person!.role !== 1) await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", session.user.id);
+  try {
+    const response = await api("/api/rooms", { method: "POST", headers: { Cookie: session.cookie }, body: JSON.stringify(room) });
+    expect(response.status, await response.clone().text()).toBe(201);
+    return ((await response.json()) as { room: SharedRoom }).room;
+  } finally {
+    if (closedTo && person!.role !== 1) await workspaceSql("UPDATE users SET role = ? WHERE id = ?", person!.role, session.user.id);
+  }
 }
 
 /** Starts uploading `file`, a `NewUpload`, to `room` as `session`, answering how the Worker answered. */
