@@ -7,6 +7,13 @@ import { api, closeOf, connect, createRoom, direct, freshDeploy, openWorkspaceSo
 
 beforeEach(freshDeploy);
 
+const administratorAda = async () => {
+  const session = await signIn("Ada");
+  await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", session.user.id);
+  return session;
+};
+
+
 const as = (session: Session) => ({ headers: { Cookie: session.cookie } });
 
 const newRoomForm = (session: Session) => api("/api/rooms/new", as(session));
@@ -58,7 +65,7 @@ describe("Create an open room", () => {
 
 describe("Room settings page", () => {
   it("shows a room's settings to whoever made it, with everyone active and whether they're in it", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, linus.user.id], as: ada });
 
     const response = await settings(room.id, ada);
@@ -75,7 +82,7 @@ describe("Room settings page", () => {
   });
 
   it("shows other members the same settings, which they can't change", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Design", { as: ada });
 
     const shown = (await (await settings(room.id, grace)).json()) as RoomSettings;
@@ -87,7 +94,7 @@ describe("Room settings page", () => {
   });
 
   it("renames a room, trimming the name, and answers it", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
 
     const response = await change(room.id, ada, { name: "  Product design " });
@@ -98,7 +105,7 @@ describe("Room settings page", () => {
   });
 
   it("refuses a name that's blank or too long, keeping the one it has", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     for (const body of [{ name: " " }, { name: "x".repeat(101) }, null]) {
       const response = await change(room.id, ada, body);
@@ -122,7 +129,7 @@ describe("Room settings page", () => {
 
 describe("Who can change a room", () => {
   it("lets the room's creator and administrators change it", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Design", { as: ada });
     await promote(grace);
 
@@ -133,7 +140,7 @@ describe("Who can change a room", () => {
   });
 
   it("refuses other members before checking what they sent, and changes nothing", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Design", { as: ada });
 
     for (const body of [{ name: "Mine now" }, { name: " " }, { kind: "closed" }]) {
@@ -145,7 +152,7 @@ describe("Who can change a room", () => {
   });
 
   it("makes one change at a time, so someone taken out of a room can't open it with a change they sent before", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     await promote(grace);
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     // Holds Ada's change between reading who may make it and writing, as D1 can, until Grace's change
@@ -174,7 +181,7 @@ describe("Who can change a room", () => {
   });
 
   it("answers 404 to people who aren't in the room, administrators included, and for missing rooms and DMs", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     await promote(grace);
     const room = await createRoom("Leads", { closedTo: [ada.user.id], as: ada });
     const dm = await direct(ada, grace);
@@ -189,7 +196,7 @@ describe("Who can change a room", () => {
   });
 
   it("asks who's signed in, and refuses changes from other sites", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     expect((await api(`/api/rooms/${room.id}/settings`)).status).toBe(401);
     expect((await api(`/api/rooms/${room.id}`, { method: "PATCH", body: JSON.stringify({ name: "Renamed" }) })).status).toBe(401);
@@ -207,7 +214,7 @@ describe("Leave a private room", () => {
   const leave = (roomId: RoomId, session?: Session) => api(`/api/rooms/${roomId}/membership`, { method: "DELETE", ...(session && as(session)) });
 
   it("takes out someone who can't change the room, by their own choice, closing their sockets there, and nobody else", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id, linus.user.id], as: ada });
     const graceInRoom = await connect(room.id, grace);
     const linusInRoom = await connect(room.id, linus);
@@ -226,7 +233,7 @@ describe("Leave a private room", () => {
   });
 
   it("refuses whoever can change the room, creator or administrator, whose settings take them out, and keeps them in", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id, linus.user.id], as: ada });
     await promote(grace);
     for (const session of [ada, grace]) {
@@ -238,7 +245,7 @@ describe("Leave a private room", () => {
   });
 
   it("refuses the last person who could open it, counting neither bots nor anyone banned, and keeps them in", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const room = await createRoom("Leads", { closedTo: [grace.user.id, linus.user.id], as: ada });
     const refused = async () => {
       const response = await leave(room.id, grace);
@@ -257,7 +264,7 @@ describe("Leave a private room", () => {
   });
 
   it("refuses an open room, which takes in everyone, and answers 404 to people who aren't in the room, for missing rooms and DMs", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const open = await createRoom("Design", { as: ada });
     const refused = await leave(open.id, grace);
     expect(refused.status).toBe(403);
@@ -272,7 +279,7 @@ describe("Leave a private room", () => {
   });
 
   it("asks who's signed in, and refuses requests from other sites", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     expect((await leave(room.id)).status).toBe(401);
     const crossSite = await api(`/api/rooms/${room.id}/membership`, { method: "DELETE", headers: { Cookie: grace.cookie, "Sec-Fetch-Site": "cross-site" } });
@@ -283,7 +290,7 @@ describe("Leave a private room", () => {
 
 describe("Switch a room between open and private", () => {
   it("makes a private room open, adding everyone active and keeping members' notification levels", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id], as: ada });
     await workspaceSql("UPDATE users SET status = 1 WHERE id = ?", linus.user.id);
     await workspaceSql("UPDATE memberships SET involvement = 'everything' WHERE room_id = ? AND user_id = ?", room.id, ada.user.id);
@@ -297,7 +304,7 @@ describe("Switch a room between open and private", () => {
   });
 
   it("makes an open room private to the people chosen, closing everyone else's sockets there, who find it gone", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const [room, annex] = [await createRoom("Design", { as: ada }), await createRoom("Annex", { as: ada })];
     const graceInRoom = await connect(room.id, grace);
     const linusInRoom = await connect(room.id, linus);
@@ -321,7 +328,7 @@ describe("Switch a room between open and private", () => {
 
 describe("Add and remove private room members", () => {
   it("adds and takes out a private room's people as its settings save them, adding anyone who exists", async () => {
-    const [ada, grace, linus, mary] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus"), await signIn("Mary")];
+    const [ada, grace, linus, mary] = [await administratorAda(), await signIn("Grace"), await signIn("Linus"), await signIn("Mary")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     await workspaceSql("UPDATE users SET status = 1 WHERE id = ?", mary.user.id);
 
@@ -336,7 +343,7 @@ describe("Add and remove private room members", () => {
   });
 
   it("takes out whoever saves the room without themselves, who can't see it then", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
 
     expect((await change(room.id, ada, { kind: "closed", memberIds: [grace.user.id] })).status).toBe(200);
@@ -346,7 +353,7 @@ describe("Add and remove private room members", () => {
   });
 
   it("queues nothing, and records no change, when everyone stays and nothing else changes", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     await workspaceSql("UPDATE rooms SET updated_at = 'then' WHERE id = ?", room.id);
     const graceInRoom = await connect(room.id, grace);
@@ -361,7 +368,7 @@ describe("Add and remove private room members", () => {
   });
 
   it("still closes the sockets of the people it takes out when the database saves the change but its answer is lost", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const closed = closeOf((await connect(room.id, grace)).ws);
     await runInDurableObject(workspaceStub(), (workspace: Workspace) => {

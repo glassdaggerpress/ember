@@ -4,6 +4,13 @@ import { api, createRoom, direct, freshDeploy, signIn, workspaceSql, type Sessio
 
 beforeEach(freshDeploy);
 
+const administratorAda = async () => {
+  const session = await signIn("Ada");
+  await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", session.user.id);
+  return session;
+};
+
+
 const ICON_REFUSED = { error: 'Icon must be one of the room icons, or "" for the default' };
 
 const change = (roomId: RoomId, session: Session, body: unknown) =>
@@ -19,7 +26,7 @@ const stored = async (roomId: RoomId) => (await workspaceSql("SELECT name, icon 
 
 describe("Room icons", () => {
   it("makes a room with the icon chosen, or the default `#` with none or \"\", and lists it for everyone in it", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const coffee = await createRoom("Coffee", { icon: "coffee", as: ada });
     const plain = await createRoom("Plain", { as: ada });
     const reset = await createRoom("Leads", { icon: "", closedTo: [ada.user.id, grace.user.id], as: ada });
@@ -31,7 +38,7 @@ describe("Room icons", () => {
   });
 
   it('changes a room\'s icon, keeps it when a change leaves it out, switching access included, and goes back to `#` with ""', async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
 
     expect(((await (await change(room.id, ada, { icon: "iconoir:regular:coffee-cup" })).json()) as { room: SharedRoom }).room).toEqual({ ...room, icon: "iconoir:regular:coffee-cup" });
@@ -48,7 +55,7 @@ describe("Room icons", () => {
   });
 
   it("refuses an icon that isn't exactly one, making and changing nothing", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { icon: "coffee", as: ada });
 
     for (const icon of ["Coffee", "../coffee", "iconoir:coffee-cup", null]) {
@@ -63,7 +70,7 @@ describe("Room icons", () => {
   });
 
   it("refuses other members before checking the icon, and DMs, which have none", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Design", { as: ada });
     const dm = await direct(ada, grace);
 
@@ -74,7 +81,7 @@ describe("Room icons", () => {
   });
 
   it("records no change when the icon stays as it is", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { icon: "coffee", as: ada });
     await workspaceSql("UPDATE rooms SET updated_at = 'then' WHERE id = ?", room.id);
 

@@ -5,6 +5,13 @@ import { api, createRoom, freshDeploy, openWorkspaceSocket, signIn, workspaceSql
 
 beforeEach(freshDeploy);
 
+const administratorAda = async () => {
+  const session = await signIn("Ada");
+  await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", session.user.id);
+  return session;
+};
+
+
 const change = (roomId: RoomId, session: Session, body: unknown) =>
   api(`/api/rooms/${roomId}`, { method: "PATCH", headers: { Cookie: session.cookie }, body: JSON.stringify(body) });
 
@@ -15,7 +22,7 @@ const heardNothing = async (tab: WorkspaceSocket) => expect(await tab.answers())
 
 describe("Live sidebar updates", () => {
   it("shows a new open room in every tab of everyone's at once", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const tabs = [await openWorkspaceSocket(ada), await openWorkspaceSocket(ada), await openWorkspaceSocket(grace)];
 
     const room = await createRoom("Design", { as: ada });
@@ -23,7 +30,7 @@ describe("Live sidebar updates", () => {
   });
 
   it("shows a new private room to its members alone", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const [adasTab, gracesTab] = [await openWorkspaceSocket(ada), await openWorkspaceSocket(grace)];
 
     const room = await createRoom("Plans", { closedTo: [ada.user.id], as: ada });
@@ -32,7 +39,7 @@ describe("Live sidebar updates", () => {
   });
 
   it("shows a room renamed, or given another icon, to everyone in it, and nobody else", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Plans", { closedTo: [ada.user.id], as: ada });
     const [adasTab, gracesTab] = [await openWorkspaceSocket(ada), await openWorkspaceSocket(grace)];
 
@@ -42,7 +49,7 @@ describe("Live sidebar updates", () => {
   });
 
   it("takes a room out of the sidebars of the people a change takes out, and shows it to those it puts in", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const room = await createRoom("Plans", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const [adasTab, gracesTab, linussTab] = [await openWorkspaceSocket(ada), await openWorkspaceSocket(grace), await openWorkspaceSocket(linus)];
 
@@ -54,7 +61,7 @@ describe("Live sidebar updates", () => {
   });
 
   it("shows a private room opened to everyone in every sidebar, and one made private again in its members' alone", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Plans", { closedTo: [ada.user.id], as: ada });
     const [adasTab, gracesTab] = [await openWorkspaceSocket(ada), await openWorkspaceSocket(grace)];
 
@@ -68,7 +75,7 @@ describe("Live sidebar updates", () => {
   });
 
   it("takes a deleted room out of the sidebars of the people who were in it, telling nobody else", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Plans", { closedTo: [ada.user.id], as: ada });
     const [adasTab, gracesTab] = [await openWorkspaceSocket(ada), await openWorkspaceSocket(grace)];
 
@@ -78,7 +85,7 @@ describe("Live sidebar updates", () => {
   });
 
   it("tells nobody of a change that changes nothing", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Plans", { as: ada });
     const adasTab = await openWorkspaceSocket(ada);
 

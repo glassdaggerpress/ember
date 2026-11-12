@@ -25,6 +25,7 @@ import {
   signIn,
   startUpload,
   upload,
+  workspaceSql,
   type FileMessage,
   type Session,
 } from "./support";
@@ -869,6 +870,7 @@ describe("Only members see a room", () => {
 
   it("stops an upload once its uploader leaves the room, and refuses uploads to a deleted room", async () => {
     const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", ada.user.id);
     const design = await createRoom("design", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const earth = fileOf(UPLOAD_PART_SIZE + 10);
     const upload = await started(grace, design.id, "earth.png", earth);

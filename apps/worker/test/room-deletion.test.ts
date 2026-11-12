@@ -36,6 +36,13 @@ const bindings = env as unknown as Env;
 
 beforeEach(freshDeploy);
 
+const administratorAda = async () => {
+  const session = await signIn("Ada");
+  await workspaceSql("UPDATE users SET role = 1 WHERE id = ?", session.user.id);
+  return session;
+};
+
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -89,7 +96,7 @@ async function outcome(roomId: RoomId, access: Access): Promise<"welcome" | numb
 
 describe("Delete a room", () => {
   it("deletes a room for whoever made it, closing every socket in it, whose people find it gone", async () => {
-    const [ada, grace, linus] = [await signIn("Ada"), await signIn("Grace"), await signIn("Linus")];
+    const [ada, grace, linus] = [await administratorAda(), await signIn("Grace"), await signIn("Linus")];
     const [room, annex] = [await createRoom("Design", { as: ada }), await createRoom("Annex", { as: ada })];
     const inRoom = [await connect(room.id, ada), await connect(room.id, ada), await connect(room.id, grace)];
     const linusInAnnex = await connect(annex.id, linus);
@@ -110,7 +117,7 @@ describe("Delete a room", () => {
   });
 
   it("deletes the room's messages, their reactions, the deletions it kept for reconnecting tabs and its files' records, and no other room's", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const [room, annex] = [await createRoom("Design", { as: ada }), await createRoom("Annex", { as: ada })];
     for (const { id } of [room, annex]) await upload(ada, id, "moon.jpg", recordedImage("moon-thumb.jpg"));
     const inRoom = await connect(room.id, ada);
@@ -140,7 +147,7 @@ describe("Delete a room", () => {
 
   it("deletes a large room's messages a batch at a time, going on from a batch that failed when the Workspace asks again", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     const inRoom = await connect(room.id, ada);
     await post(inRoom, "The newest");
@@ -173,7 +180,7 @@ describe("Delete a room", () => {
   });
 
   it("lets administrators delete the rooms they're in, and refuses other members, changing nothing", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Design", { as: ada });
     const graceInRoom = await connect(room.id, grace);
     await post(graceInRoom, "Mine to keep");
@@ -192,7 +199,7 @@ describe("Delete a room", () => {
   });
 
   it("answers 404 to people who aren't in the room, administrators included, and for missing rooms", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     await promote(grace);
     const room = await createRoom("Leads", { closedTo: [ada.user.id], as: ada });
 
@@ -205,7 +212,7 @@ describe("Delete a room", () => {
   });
 
   it("asks who's signed in, and refuses deletions from other sites", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     expect((await api(`/api/rooms/${room.id}`, { method: "DELETE" })).status).toBe(401);
     const crossSite = await api(`/api/rooms/${room.id}`, { method: "DELETE", headers: { Cookie: ada.cookie, Origin: "https://evil.test" } });
@@ -214,7 +221,7 @@ describe("Delete a room", () => {
   });
 
   it("still closes the room's sockets when the database saves the deletion but its answer is lost", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     const closed = closeOf((await connect(room.id, ada)).ws);
     await runInDurableObject(workspaceStub(), (workspace: Workspace) => {
@@ -232,7 +239,7 @@ describe("Delete a room", () => {
   });
 
   it("waits for a change under way to finish before deleting the room", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     await promote(grace);
     const room = await createRoom("Leads", { as: ada });
     // Holds Grace's change between reading who may make it and writing, as D1 can, until Ada's
@@ -266,7 +273,7 @@ describe("Delete a room", () => {
   });
 
   it("still deletes the room when it's deleted while a revocation in it is on its way", async () => {
-    const [ada, grace] = [await signIn("Ada"), await signIn("Grace")];
+    const [ada, grace] = [await administratorAda(), await signIn("Grace")];
     const room = await createRoom("Leads", { closedTo: [ada.user.id, grace.user.id], as: ada });
     const adaInRoom = await connect(room.id, ada);
     await post(adaInRoom, "Gone soon");
@@ -307,7 +314,7 @@ describe("Delete a room", () => {
   });
 
   it("turns away a socket let through at or before the room was deleted, telling it to reconnect", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     const deletedAt = Date.now();
     await roomStub(room.id).revoke(room.id, [{ tag: EVERYONE, code: CloseCode.NotFound }], deletedAt);
@@ -318,7 +325,7 @@ describe("Delete a room", () => {
   });
 
   it("erases what's left of the room once no socket let through before could still arrive", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     const inRoom = await connect(room.id, ada);
     await post(inRoom, "Gone soon");
@@ -350,7 +357,7 @@ describe("Delete a room", () => {
     ["the Workspace", "workspace", "sendEvents"],
     ["the search index", "index", "sendMessages"],
   ] as const)("erases the room once its call to %s is done, which would make its tables again", async (_, courier, send) => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     const room = await createRoom("Design", { as: ada });
     const inRoom = await connect(room.id, ada);
     await post(inRoom, "Gone soon");
@@ -384,7 +391,7 @@ describe("Delete a room", () => {
 
 describe("Rooms from before memberships", () => {
   it("doesn't bring back a room it registered once it's deleted", async () => {
-    const ada = await signIn("Ada");
+    const ada = await administratorAda();
     await promote(ada);
     const id = `legacy-${crypto.randomUUID().slice(0, 8)}`;
     await workspaceStub().registerLegacyRooms([id]);
